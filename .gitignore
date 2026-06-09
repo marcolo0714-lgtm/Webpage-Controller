@@ -1,5 +1,7 @@
 .vscode/
+__pycache__/
 screenshots/
 testing.py
-my_user_data_dir/
+secret_user_data_dir/
 user_data_dir/
+*.pdf
