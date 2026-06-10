@@ -74,25 +74,23 @@ Moreover, customize the webpage controller in the following ways:
 ## `webtest.py` functions specifications
 
 - `click(page, selector, input_time=None, wait_flag=False)`
-  - Clicks a page element by CSS selector.
-  - Supports `input_time` to delay the click until a specific `HH:MM:SS` time.
-  - Supports `wait_flag` to wait for the selector to appear on screen for up to 30 minutes.
+  - Clicks a page element by CSS selector within a 5 second limit.
   - Prints errors and returns if the selector is missing, invalid, or not visible.
 
 - `fill(page, selector, text, input_time=None, wait_flag=False)`
-  - Fills an input element with the provided text within a 5 second limit.
-  - Supports `input_time` to delay the fill until a specific `HH:MM:SS` time.
-  - Supports `wait_flag` to wait for the selector to appear on screen for up to 30 minutes.
-  - Prints errors if the selector is missing or invalid, or the text is empty.
+  - Fills an input element by CSS selector with the provided text within a 5 second limit.
+  - Prints errors if the selector is missing, invalid, not visible, or the text is empty.
 
 - `text(page, selector, input_time=None, wait_flag=False)`
   - Prints and returns the text content of the selected element.
-  - Supports delayed execution with `-time` or waiting for the element with `-wait`.
 
 - `image(page, selector, input_time=None, wait_flag=False)`
   - Saves a screenshot of the selected element.
   - Screenshots are stored in `screenshots/` with sequential names like `capture1.png`, `capture2.png`, etc.
-  - Supports delayed execution with `-time` or waiting for the element with `-wait`.
+
+All functions supports the following 2 parameters:
+  - `input_time` to delay the fill until a specific `HH:MM:SS` time.
+  - `wait_flag` to wait for the selector to appear on screen for up to 30 minutes.
 
 ## Other helper files
 

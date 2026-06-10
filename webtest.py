@@ -11,6 +11,8 @@ url = "https://www.lib.cuhk.edu.hk/en/"
 
 screen_width = 1525
 screen_height = 825
+wait_flag_timeout = 30  # in minutes
+
 image_filepath = "screenshots/"
 image_capture_count = 0
 
@@ -46,33 +48,59 @@ def get_target_datetime(input_time):
         target_datetime += timedelta(days=1)
     return target_datetime
 
-def parse_flags(arg_string):
-    """Parse optional -time and -wait flags from a command string.
-    Returns (args, time_value, wait_flag).
-    Raises ValueError if both flags are present.
+def parse_flags(command_body):
+    """Parse selector, required flags (-text or -key), and optional flags (-time or -wait) from the command body.
+    Returns (selector, required_text, time_value, wait_flag).
+    Raises ValueError if more than 1 flag of the same kind (required or optional) are present.
     """
-    tokens = shlex.split(arg_string)
-    has_time = "-time" in tokens
-    has_wait = "-wait" in tokens
-    
-    if has_time and has_wait:
-        raise ValueError("Cannot use both -time and -wait flags simultaneously.")
-    
-    if has_time:
-        time_index = tokens.index("-time")
-        if time_index == len(tokens) - 1:
-            return " ".join(tokens[:time_index]), None, False
-        time_value = tokens[time_index + 1]
-        remaining = " ".join(tokens[:time_index] + tokens[time_index + 2:])
-        return remaining.strip(), time_value, False
-    
-    if has_wait:
-        wait_index = tokens.index("-wait")
-        remaining = " ".join(tokens[:wait_index] + tokens[wait_index + 1:])
-        return remaining.strip(), None, True
-    
-    return arg_string.strip(), None, False
+    tokens = list(shlex.split(command_body))
 
+    # Parsing optional flags (-time or -wait)
+    has_time = "-time" in tokens
+    wait_flag = "-wait" in tokens
+    if has_time and wait_flag:
+        raise ValueError("Cannot use both -time and -wait flags simultaneously.")
+    try:
+        time_value = tokens[tokens.index("-time") + 1] if has_time else None
+    except:
+        raise ValueError("-time flag present, but contain no arguments.")
+    
+    # Parsing required flags (-text or -key)
+    has_text = "-text" in tokens
+    has_key = "-key" in tokens
+
+    if has_text and has_key:
+        raise ValueError("Cannot use both -text and -key flags simultaneously.")
+    if has_time:
+        final_flag_pos = tokens.index("-time")
+    elif wait_flag:
+        final_flag_pos = tokens.index("-wait")
+    else:
+        final_flag_pos = len(tokens)
+
+    if has_text:
+        req_flag_pos = tokens.index("-text")
+    elif has_key:
+        req_flag_pos = tokens.index("-key")
+    else:
+        req_flag_pos = -1
+    if req_flag_pos > final_flag_pos:
+        raise ValueError(f"Required flags ({"-text" if has_text else "-key"}) appears before optional flags ({"-time" if has_time else "-wait"}).")
+    
+    if has_text or has_key:
+        required_text = ' '.join(tokens[req_flag_pos + 1: final_flag_pos])
+        if required_text == "":
+            raise ValueError("-text flag present, but contain no arguments.")
+    else:
+        required_text = None
+    
+    # Parsing selector
+    if req_flag_pos == -1:
+        selector = ' '.join(tokens[0 : final_flag_pos])
+    else:
+        selector = ' '.join(tokens[0 : min(req_flag_pos, final_flag_pos)])
+
+    return selector, required_text, time_value, wait_flag
 
 
 def wait_until_time(input_time):
@@ -95,11 +123,11 @@ def click(page, selector, input_time=None, wait_flag=False):
             print(f"❌ Action failed: {e}")
             return
     elif wait_flag:
-        print(f"Waiting for selector '{selector}' to appear on screen (timeout: 30 mins)...")
+        print(f"Waiting for selector '{selector}' to appear on screen (timeout: {wait_flag_timeout} mins)...")
         try:
-            page.wait_for_selector(selector, timeout=30 * 60 * 1000)  # 30 minutes in milliseconds
+            page.wait_for_selector(selector, timeout=wait_flag_timeout * 60 * 1000)  # in milliseconds
         except Exception:
-            print(f"❌ Action failed: Selector '{selector}' did not appear within 30 minutes.")
+            print(f"❌ Action failed: Selector '{selector}' did not appear within {wait_flag_timeout} minutes.")
             return
 
     print(f"Attempting to click: '{selector}'...")
@@ -127,11 +155,11 @@ def fill(page, selector, text, input_time=None, wait_flag=False):
             print(f"❌ Action failed: {e}")
             return
     elif wait_flag:
-        print(f"Waiting for selector '{selector}' to appear on screen (timeout: 30 mins)...")
+        print(f"Waiting for selector '{selector}' to appear on screen (timeout: {wait_flag_timeout} mins)...")
         try:
-            page.wait_for_selector(selector, timeout=30 * 60 * 1000)  # 30 minutes in milliseconds
+            page.wait_for_selector(selector, timeout=wait_flag_timeout * 60 * 1000)  # in milliseconds
         except Exception:
-            print(f"❌ Action failed: Selector '{selector}' did not appear within 30 minutes.")
+            print(f"❌ Action failed: Selector '{selector}' did not appear within {wait_flag_timeout} minutes.")
             return
 
     print(f"Attempting to fill: '{selector}' with '{text}'...")
@@ -155,11 +183,11 @@ def text(page, selector, input_time=None, wait_flag=False):
             print(f"❌ Action failed: {e}")
             return None
     elif wait_flag:
-        print(f"Waiting for selector '{selector}' to appear on screen (timeout: 30 mins)...")
+        print(f"Waiting for selector '{selector}' to appear on screen (timeout: {wait_flag_timeout} mins)...")
         try:
-            page.wait_for_selector(selector, timeout=30 * 60 * 1000)
+            page.wait_for_selector(selector, timeout=wait_flag_timeout * 60 * 1000)
         except Exception:
-            print(f"❌ Action failed: Selector '{selector}' did not appear within 30 minutes.")
+            print(f"❌ Action failed: Selector '{selector}' did not appear within {wait_flag_timeout} minutes.")
             return None
 
     try:
@@ -186,11 +214,11 @@ def image(page, selector, input_time=None, wait_flag=False):
             print(f"❌ Action failed: {e}")
             return None
     elif wait_flag:
-        print(f"Waiting for selector '{selector}' to appear on screen (timeout: 30 mins)...")
+        print(f"Waiting for selector '{selector}' to appear on screen (timeout: {wait_flag_timeout} mins)...")
         try:
-            page.wait_for_selector(selector, timeout=30 * 60 * 1000)
+            page.wait_for_selector(selector, timeout=wait_flag_timeout * 60 * 1000)
         except Exception:
-            print(f"❌ Action failed: Selector '{selector}' did not appear within 30 minutes.")
+            print(f"❌ Action failed: Selector '{selector}' did not appear within {wait_flag_timeout} minutes.")
             return None
 
     os.makedirs(image_filepath, exist_ok=True)
@@ -203,8 +231,53 @@ def image(page, selector, input_time=None, wait_flag=False):
         print(f"✅ Saved image for '{selector}' to {path}")
         return path
     except Exception:
-        print("❌ Action failed: Make sure the CSS selector is correct and visible on screen.")
+        print("❌ Action failed: Make sure the CSS selector is correct and visible on screen, and the screenshot path exists.")
         return None
+
+
+# This function is designed to press a keyboard key on a selected element.
+def press(page, selector, key, input_time=None, wait_flag=False):
+    if not selector:
+        print("❌ Error: Missing CSS selector. Format: press <selector> <key>")
+        return
+    if not key:
+        print("❌ Error: Missing key string. Format: press <selector> <key>")
+        return
+
+    if input_time:
+        try:
+            wait_until_time(input_time)
+        except ValueError as e:
+            print(f"❌ Action failed: {e}")
+            return
+    elif wait_flag:
+        print(f"Waiting for selector '{selector}' to appear on screen (timeout: {wait_flag_timeout} mins)...")
+        try:
+            page.wait_for_selector(selector, timeout=wait_flag_timeout * 60 * 1000)
+        except Exception:
+            print(f"❌ Action failed: Selector '{selector}' did not appear within {wait_flag_timeout} minutes.")
+            return
+
+    print(f"Attempting to press '{key}' on '{selector}'...")
+    try:
+        page.locator(selector).press(key, timeout=5000)
+    except Exception:
+        print("❌ Action failed: Make sure the CSS selector is correct and visible on screen.")
+    else:
+        print("✅ Key press completed successfully!")
+
+
+# This function is designed to run a custom batch of browser actions.
+def batch(page):
+    # Customize this function to perform a series of browser actions.
+    # Example:
+    #     click(page, "button.submit")
+    #     fill(page, "input[name='q']", "Hello world")
+    #     press(page, "input[name='q']", "Enter")
+    #     text(page, ".result")
+    #     image(page, ".screenshot-target")
+    # You can also add loops, sleeps, or any other control flow here.
+    pass
 
 
 def interactive_browser():
@@ -231,9 +304,11 @@ def interactive_browser():
         print("=" * 60)
         print("COMMAND FORMATS:")
         print("  To click:         click <selector> [-time HH:MM:SS | -wait]")
-        print("  To fill:          fill <selector> <text> [-time HH:MM:SS | -wait]")
+        print("  To fill:          fill <selector> -text <text> [-time HH:MM:SS | -wait]")
+        print("  To press a key:   press <selector> -key <key> [-time HH:MM:SS | -wait]")
         print("  To get text:      text <selector> [-time HH:MM:SS | -wait]")
         print("  To get image:     image <selector> [-time HH:MM:SS | -wait]")
+        print("  To run batch:     batch")
         print("  To exit:          exit")
         print("=" * 60)
 
@@ -244,55 +319,46 @@ def interactive_browser():
                 if not user_input:
                     continue
 
-                if user_input.lower().strip() == "exit":
+                # 3. Handle standalone commands
+                action = user_input.split(" ", 1)[0].lower().strip()
+                if action == "exit":
                     print("Closing browser and exiting.")
                     break
+                elif action == "batch":
+                    batch(page)
+                    continue
 
-                # Parse the action
-                action = user_input.split(" ", 1)[0].lower()
+                # 4. Parse the flags to handle commands supporting optional or required flags
+                command_body = user_input[len(action):].strip()
+                selector, required_text, input_time, wait_flag = parse_flags(command_body)
+                if selector == "":
+                    raise ValueError("Selector is required, but not present.")
 
                 ###################################################
                 if action == "click":
-                    command_body = user_input[len("click"):].strip()
-                    try:
-                        selector, input_time, wait_flag = parse_flags(command_body)
-                        click(page, selector, input_time, wait_flag)
-                    except ValueError as e:
-                        print(f"❌ Error: {e}")
+                    if required_text != None:
+                        raise ValueError("Unexpected extra flags (-text or -key).")
+                    click(page, selector, input_time, wait_flag)
 
                 elif action == "fill":
-                    command_body = user_input[len("fill"):].strip()
-                    try:
-                        command_body, input_time, wait_flag = parse_flags(command_body)
-                        tokens = shlex.split(command_body)
-                        if len(tokens) < 2:
-                            print("❌ Error: fill requires a selector and text. Use quotes if needed.")
-                        else:
-                            selector = tokens[0]
-                            text_value = " ".join(tokens[1:])
-                            fill(page, selector, text_value, input_time, wait_flag)
-                    except ValueError as e:
-                        print(f"❌ Error: {e}")
+                    if required_text == None:
+                        raise ValueError("Expected flags (-text) not present.")
+                    fill(page, selector, required_text, input_time, wait_flag)
+
+                elif action == "press":
+                    if required_text == None:
+                        raise ValueError("Expected flags (-text) not present.")
+                    press(page, selector, required_text, input_time, wait_flag)
 
                 elif action == "text":
-                    command_body = user_input[len("text"):].strip()
-                    try:
-                        selector, input_time, wait_flag = parse_flags(command_body)
-                        text(page, selector, input_time, wait_flag)
-                    except ValueError as e:
-                        print(f"❌ Error: {e}")
+                    if required_text != None:
+                        raise ValueError("Unexpected extra flags (-text or -key).")
+                    text(page, selector, input_time, wait_flag)
 
                 elif action == "image":
-                    command_body = user_input[len("image"):].strip()
-                    try:
-                        selector, input_time, wait_flag = parse_flags(command_body)
-                        image(page, selector, input_time, wait_flag)
-                    except ValueError as e:
-                        print(f"❌ Error: {e}")
-
-                elif action == "eval":
-                    selector = user_input[len(action):].strip()
-                    page.locator(selector).click()  # 5-second limit so it doesn't hang forever
+                    if required_text != None:
+                        raise ValueError("Unexpected extra flags (-text or -key).")
+                    text(page, selector, input_time, wait_flag)
 
                 else:
                     print(f"❌ Unknown action '{action}'.")
