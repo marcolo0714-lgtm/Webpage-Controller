@@ -50,7 +50,7 @@ def get_target_datetime(input_time):
 
 def parse_flags(command_body):
     """Parse selector, required flags (-text or -key), and optional flags (-time or -wait) from the command body.
-    Returns (selector, required_text, time_value, wait_flag).
+    Returns (selector -> str | None, required_text -> str | None, time_value -> str | None, wait_flag -> bool).
     Raises ValueError if more than 1 flag of the same kind (required or optional) are present.
     """
     tokens = list(shlex.split(command_body))
@@ -103,22 +103,13 @@ def parse_flags(command_body):
     return selector, required_text, time_value, wait_flag
 
 
-def wait_until_time(input_time):
-    target_datetime = get_target_datetime(input_time)
-    print(f"Waiting until {input_time} (in {time_difference(target_datetime)})...")
-    while datetime.now() < target_datetime:
-        time.sleep(0.01)
-
-
-# This function is designed to click a button or element specified by the CSS selector.
-def click(page, selector, input_time=None, wait_flag=False):
-    if not selector:
-        print("❌ Error: Missing CSS selector. Format: click <selector>")
-        return
-
+def wait_until_time_or_appear(page, selector, input_time, wait_flag):
     if input_time:
         try:
-            wait_until_time(input_time)
+            target_datetime = get_target_datetime(input_time)
+            print(f"Waiting until {input_time} (in {time_difference(target_datetime)})...")
+            while datetime.now() < target_datetime:
+                time.sleep(0.01)
         except ValueError as e:
             print(f"❌ Action failed: {e}")
             return
@@ -129,6 +120,14 @@ def click(page, selector, input_time=None, wait_flag=False):
         except Exception:
             print(f"❌ Action failed: Selector '{selector}' did not appear within {wait_flag_timeout} minutes.")
             return
+        
+# This function is designed to click a button or element specified by the CSS selector.
+def click(page, selector, input_time=None, wait_flag=False):
+    if not selector:
+        print("❌ Error: Missing CSS selector. Format: click <selector>")
+        return
+
+    wait_until_time_or_appear(page, selector, input_time, wait_flag)
 
     print(f"Attempting to click: '{selector}'...")
     try:
@@ -148,19 +147,7 @@ def fill(page, selector, text, input_time=None, wait_flag=False):
         print("❌ Error: Missing text to fill on input field. Please provide the text to be filled.")
         return
 
-    if input_time:
-        try:
-            wait_until_time(input_time)
-        except ValueError as e:
-            print(f"❌ Action failed: {e}")
-            return
-    elif wait_flag:
-        print(f"Waiting for selector '{selector}' to appear on screen (timeout: {wait_flag_timeout} mins)...")
-        try:
-            page.wait_for_selector(selector, timeout=wait_flag_timeout * 60 * 1000)  # in milliseconds
-        except Exception:
-            print(f"❌ Action failed: Selector '{selector}' did not appear within {wait_flag_timeout} minutes.")
-            return
+    wait_until_time_or_appear(page, selector, input_time, wait_flag)
 
     print(f"Attempting to fill: '{selector}' with '{text}'...")
     try:
@@ -176,19 +163,7 @@ def text(page, selector, input_time=None, wait_flag=False):
         print("❌ Error: Missing CSS selector. Format: text <selector>")
         return None
 
-    if input_time:
-        try:
-            wait_until_time(input_time)
-        except ValueError as e:
-            print(f"❌ Action failed: {e}")
-            return None
-    elif wait_flag:
-        print(f"Waiting for selector '{selector}' to appear on screen (timeout: {wait_flag_timeout} mins)...")
-        try:
-            page.wait_for_selector(selector, timeout=wait_flag_timeout * 60 * 1000)
-        except Exception:
-            print(f"❌ Action failed: Selector '{selector}' did not appear within {wait_flag_timeout} minutes.")
-            return None
+    wait_until_time_or_appear(page, selector, input_time, wait_flag)
 
     try:
         content = page.locator(selector).text_content(timeout=5000)
@@ -207,19 +182,7 @@ def image(page, selector, input_time=None, wait_flag=False):
         print("❌ Error: Missing CSS selector. Format: image <selector>")
         return None
 
-    if input_time:
-        try:
-            wait_until_time(input_time)
-        except ValueError as e:
-            print(f"❌ Action failed: {e}")
-            return None
-    elif wait_flag:
-        print(f"Waiting for selector '{selector}' to appear on screen (timeout: {wait_flag_timeout} mins)...")
-        try:
-            page.wait_for_selector(selector, timeout=wait_flag_timeout * 60 * 1000)
-        except Exception:
-            print(f"❌ Action failed: Selector '{selector}' did not appear within {wait_flag_timeout} minutes.")
-            return None
+    wait_until_time_or_appear(page, selector, input_time, wait_flag)
 
     os.makedirs(image_filepath, exist_ok=True)
     image_capture_count += 1
@@ -244,19 +207,7 @@ def press(page, selector, key, input_time=None, wait_flag=False):
         print("❌ Error: Missing key string. Format: press <selector> <key>")
         return
 
-    if input_time:
-        try:
-            wait_until_time(input_time)
-        except ValueError as e:
-            print(f"❌ Action failed: {e}")
-            return
-    elif wait_flag:
-        print(f"Waiting for selector '{selector}' to appear on screen (timeout: {wait_flag_timeout} mins)...")
-        try:
-            page.wait_for_selector(selector, timeout=wait_flag_timeout * 60 * 1000)
-        except Exception:
-            print(f"❌ Action failed: Selector '{selector}' did not appear within {wait_flag_timeout} minutes.")
-            return
+    wait_until_time_or_appear(page, selector, input_time, wait_flag)
 
     print(f"Attempting to press '{key}' on '{selector}'...")
     try:
