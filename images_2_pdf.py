@@ -1,5 +1,7 @@
 from PIL import Image
 
+image_filepath = "screenshots/"
+
 def combine_images_to_pdf(image_list, output_pdf_name):
     """
     Combines a list of image filenames into a single multi-page PDF.
@@ -34,17 +36,17 @@ def combine_images_to_pdf(image_list, output_pdf_name):
             save_all=True, 
             append_images=remaining_images
         )
-        print(f"Successfully combined {len(image_list)} images into '{output_pdf_name}'")
+        print(f"✅ Successfully combined {len(image_list)} images into '{output_pdf_name}'")
         
     except Exception as e:
-        print(f"An error occurred while compiling the PDF: {e}")
+        print(f"❌ An error occurred while compiling the PDF: {e}")
         
     finally:
         # Always close your image files to free up system memory
         for img in opened_images:
             img.close()
 
+# Example usage:
 if __name__ == "__main__":
-    # Example usage:
-    image_files = [f"screenshots/test{i}.png" for i in range(1, 552)]  # Adjust the range as needed
+    image_files = [f"{image_filepath}capture{i}.png" for i in range(1, 3 + 1)]  # Adjust the range as needed, recall end is exclusive
     combine_images_to_pdf(image_files, "output.pdf")

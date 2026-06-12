@@ -127,7 +127,7 @@ def wait_until_time_or_appear(page, selector, input_time, wait_flag):
         return True
 
     # Wait for selector to appear (polling loop so user can Ctrl+C to cancel)
-    if wait_flag:
+    elif wait_flag:
         deadline = datetime.now() + timedelta(minutes=wait_flag_timeout)
         print(f"🕒 Waiting for selector '{selector}' to appear on screen (timeout: {wait_flag_timeout} mins). Press Ctrl+C to cancel.")
         try:
@@ -206,8 +206,8 @@ def press(page, selector, key, input_time=None, wait_flag=False):
     try:
         page.locator(selector).press(key, timeout=5000)
     except Exception:
-        print("❌ Action failed: Make sure the CSS selector is correct and visible on screen.")
-    finally:
+        print("❌ Action failed: Make sure the CSS selector is correct and visible on screen, and the -key flag is valid.")
+    else:
         print("✅ Key press completed successfully!")
 
 
@@ -257,8 +257,14 @@ def image(page, selector, input_time=None, wait_flag=False):
         return None
 
 
-def list_tabs(context):
-    pages = context.pages
+def list_tabs(page):
+    # To refresh state of pages
+    try:
+        page.wait_for_timeout(100)
+    except:
+        pass
+
+    pages = page.context.pages
     if not pages:
         print("⚠️ No open tabs found.")
         return
@@ -271,7 +277,13 @@ def list_tabs(context):
         print(f"  [{index}] {page.url} | {title}")
 
 
-def switch_tab(context, switch_body):
+def switch_tab(page, switch_body):
+    # To refresh state of pages
+    try:
+        page.wait_for_timeout(100)
+    except:
+        pass
+
     # Validate switch_body and tab index
     if not switch_body:
         print("❌ Error: switch requires a tab index.")
@@ -283,7 +295,7 @@ def switch_tab(context, switch_body):
         return
     
     # Validate whether the tab index exists
-    pages = context.pages
+    pages = page.context.pages
     if not pages:
         print("❌ No open tabs to switch.")
         return None
@@ -300,6 +312,21 @@ def switch_tab(context, switch_body):
     print(f"✅ Switched to tab {index}: {page.url} | {title}")
     return page
 
+
+def reload(page, input_time=None):
+    ok = wait_until_time_or_appear(page, None, input_time, False)  # reload doesn't need a selector or wait_flag, but we can still use the time-based waiting
+    if ok is False:
+        return
+
+    print("➡️ Reloading page...")
+    try:
+        page.reload(timeout=10000)  # 10-second limit so it doesn't hang forever
+    except Exception:
+        print("⚠️ The page is still loading or the reload failed. Please check the page manually.")
+    else:
+        print("✅ Page reloaded successfully!")
+
+
 # Run a custom batch of browser actions.
 def batch(page):
     # Customize this function to perform a series of browser actions.
@@ -310,17 +337,24 @@ def batch(page):
     #    3. press(page, selector, key, input_time=None, wait_flag=False)
     #    4. text(page, selector, input_time=None, wait_flag=False)
     #    5. image(page, selector, input_time=None, wait_flag=False)
+    #    6. switch_tab(page, switch_body)
+    #    7. reload(page, input_time=None)
     # Notes:
     #    1. selector, input_time, text, key are all of str | None type
     #    2. key is in the format so that page.locator().press(key) is valid. Examples of key:
-    #        'Enter', 'Control+v', 'a', 'A', 'Digit1'
+    #        'Enter', 'Control+V', 'a', 'A', 'Digit1'
+    #    3. Confirm that "at most one of input_time or wait_flag is not None" when calling the functions.
+    #       Otherwise, it may cause unexpected behavior.
     # Example usage:
-    #    click(page, selector, input_time="20:30:00")  # Click a button at 20:30:00
+    #    click(page, selector, input_time="20:30:00")  # Click a button at 8:30pm
     #    fill(page, selector, "secure_password", wait_flag=True)  # Fill in text when field appears
     #    press(page, selector, "Enter")  # Press 'Enter' on an element immediately
     #    text(page, selector, wait_flag=True)  # Extract text from element when it appears
-    #    image(page, selector, input_time="0:00:00")  # Get image of a element at midnight
+    #    image(page, selector, input_time="00:00:00")  # Get image of a element at midnight
+    #    switch_tab(page, "1")  # Switch to the second tab
+    #    reload(page, input_time="09:15:00")  # Reload the page at 9:15am
     pass
+
 
 def help():
     print("=" * 60)
@@ -328,18 +362,19 @@ def help():
     print("  To click:           click <selector> [-time HH:MM:SS | -wait]")
     print("  To fill:            fill <selector> -text <text> [-time HH:MM:SS | -wait]")
     print("  To press a key:     press <selector> -key <key> [-time HH:MM:SS | -wait]")
-    print("      <key> examples:   'Enter', 'control+v', 'a', 'A', 'Digit1'")
+    print("      <key> examples:   'Enter', 'Control+V', 'a', 'A', 'Digit1'")
     print("  To get text:        text <selector> [-time HH:MM:SS | -wait]")
     print("  To get image:       image <selector> [-time HH:MM:SS | -wait]")
     print("  To list tabs:       tabs")
     print("  To switch tab:      switch <tab index>")
+    print("  To reload page:     reload [-time HH:MM:SS | -wait]")
     print("  To run batch:       batch")
     print("  To print help menu: help")
     print("  To exit:            exit")
     print("=" * 60)
 
 
-
+# Main interactive loop to accept user commands and perform browser actions accordingly.
 def interactive_browser():
     print("\n➡️  Launching Chromium... Please wait.")
 
@@ -383,11 +418,11 @@ def interactive_browser():
                     help()
                     continue
                 elif action == "tabs":
-                    list_tabs(browser)
+                    list_tabs(page)
                     continue
                 elif action == "switch":
                     switch_body = user_input[len("switch"):].strip()
-                    new_page = switch_tab(browser, switch_body)
+                    new_page = switch_tab(page, switch_body)
                     if new_page is not None:
                         page = new_page
                     continue
@@ -395,7 +430,7 @@ def interactive_browser():
                 # 4. Parse the flags to handle commands supporting optional or required flags
                 command_body = user_input[len(action):].strip()
                 selector, required_text, input_time, wait_flag = parse_flags(command_body)
-                if selector == "":
+                if selector == "" and action != "reload":
                     raise ValueError("Selector is required, but not present.")
 
                 ###################################################
@@ -424,6 +459,13 @@ def interactive_browser():
                         raise ValueError("Unexpected extra flags (-text or -key).")
                     image(page, selector, input_time, wait_flag)
 
+                elif action == "reload":
+                    if wait_flag != False:
+                        raise ValueError("-wait flag is not applicable for reload command.")
+                    if required_text != None:
+                        raise ValueError("Unexpected extra flags (-text or -key).")
+                    reload(page, input_time)
+
                 else:
                     print(f"❌ Unknown action '{action}'.")
                 ###################################################
@@ -431,8 +473,8 @@ def interactive_browser():
             except ValueError as e:
                 print(f"❌ Invalid action: {e.value if hasattr(e, 'value') else e}")
                 continue
-            # except Exception as e:
-            #     print(f"❌ Action failed: {e.value if hasattr(e, 'value') else e}")
+            except Exception as e:
+                print(f"❌ Action failed: {e.value if hasattr(e, 'value') else e}")
 
 
 if __name__ == "__main__":
