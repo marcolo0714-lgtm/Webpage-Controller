@@ -1,6 +1,5 @@
 from playwright.sync_api import sync_playwright
 import os
-import shlex
 import sys
 import time
 from datetime import datetime, timedelta
@@ -9,8 +8,8 @@ url = "https://www.lib.cuhk.edu.hk/en/"
 # url = "https://www.hkemobility.gov.hk/tc/route-search/pt"
 # url = "http://youtube.com"
 
-screen_width = 1525
-screen_height = 825
+screen_width = 1525  # 1525
+screen_height = 500  # 825
 wait_flag_timeout = 30  # in minutes
 
 image_filepath = "screenshots/"
@@ -36,6 +35,7 @@ def time_difference(target_datetime):
     
     return f"{hours} hours {minutes} minutes {seconds} seconds"
 
+
 def get_target_datetime(input_time):
     """Return a datetime for the NEXT occurrence of the provided HH:MM:SS time."""
     try:
@@ -48,12 +48,13 @@ def get_target_datetime(input_time):
         target_datetime += timedelta(days=1)
     return target_datetime
 
+
 def parse_flags(command_body):
     """Parse selector, required flags (-text or -key), and optional flags (-time or -wait) from the command body.
     Returns (selector -> str | None, required_text -> str | None, time_value -> str | None, wait_flag -> bool).
     Raises ValueError if more than 1 flag of the same kind (required or optional) are present.
     """
-    tokens = list(shlex.split(command_body))
+    tokens = list(command_body.split())
 
     # Parsing optional flags (-time or -wait)
     has_time = "-time" in tokens
@@ -104,32 +105,60 @@ def parse_flags(command_body):
 
 
 def wait_until_time_or_appear(page, selector, input_time, wait_flag):
+    """Wait until a target time or until selector appears.
+
+    Returns True when wait completed normally, False when user cancelled.
+    """
+    # Wait for a specific time (polling so user can Ctrl+C to cancel)
     if input_time:
         try:
             target_datetime = get_target_datetime(input_time)
-            print(f"Waiting until {input_time} (in {time_difference(target_datetime)})...")
-            while datetime.now() < target_datetime:
-                time.sleep(0.01)
         except ValueError as e:
             print(f"❌ Action failed: {e}")
-            return
-    elif wait_flag:
-        print(f"Waiting for selector '{selector}' to appear on screen (timeout: {wait_flag_timeout} mins)...")
+            return True  # treat invalid time as non-cancellable failure so caller prints the error
+
+        print(f"🕒 Waiting until {input_time} (in {time_difference(target_datetime)})... Press Ctrl+C to cancel.")
         try:
-            page.wait_for_selector(selector, timeout=wait_flag_timeout * 60 * 1000)  # in milliseconds
-        except Exception:
+            while datetime.now() < target_datetime:
+                time.sleep(0.01)
+        except KeyboardInterrupt:
+            print("⚠️  Wait cancelled by user.")
+            return False
+        return True
+
+    # Wait for selector to appear (polling loop so user can Ctrl+C to cancel)
+    if wait_flag:
+        deadline = datetime.now() + timedelta(minutes=wait_flag_timeout)
+        print(f"🕒 Waiting for selector '{selector}' to appear on screen (timeout: {wait_flag_timeout} mins). Press Ctrl+C to cancel.")
+        try:
+            while datetime.now() < deadline:
+                try:
+                    if page.locator(selector).count() > 0:
+                        return True
+                except Exception:
+                    # ignore transient locator errors while waiting
+                    pass
+                time.sleep(0.01)
             print(f"❌ Action failed: Selector '{selector}' did not appear within {wait_flag_timeout} minutes.")
-            return
-        
-# This function is designed to click a button or element specified by the CSS selector.
+            return True
+        except KeyboardInterrupt:
+            print("⚠️  Wait cancelled by user.")
+            return False
+
+    return True
+
+
+# Click a button or element specified by the CSS selector.
 def click(page, selector, input_time=None, wait_flag=False):
     if not selector:
         print("❌ Error: Missing CSS selector. Format: click <selector>")
         return
 
-    wait_until_time_or_appear(page, selector, input_time, wait_flag)
+    ok = wait_until_time_or_appear(page, selector, input_time, wait_flag)
+    if ok is False:
+        return
 
-    print(f"Attempting to click: '{selector}'...")
+    print(f"➡️ Attempting to click: '{selector}'...")
     try:
         page.locator(selector).click(timeout=5000)  # 5-second limit so it doesn't hang forever
     except Exception:
@@ -138,7 +167,7 @@ def click(page, selector, input_time=None, wait_flag=False):
         print("✅ Button clicked successfully!")
 
 
-# This function is designed to fill in text into an input field specified by the CSS selector.
+# Fill in text into an input field specified by the CSS selector.
 def fill(page, selector, text, input_time=None, wait_flag=False):
     if not selector:
         print("❌ Error: Missing CSS selector. Format: fill <selector>")
@@ -147,9 +176,11 @@ def fill(page, selector, text, input_time=None, wait_flag=False):
         print("❌ Error: Missing text to fill on input field. Please provide the text to be filled.")
         return
 
-    wait_until_time_or_appear(page, selector, input_time, wait_flag)
+    ok = wait_until_time_or_appear(page, selector, input_time, wait_flag)
+    if ok is False:
+        return
 
-    print(f"Attempting to fill: '{selector}' with '{text}'...")
+    print(f"➡️ Attempting to fill: '{selector}' with '{text}'...")
     try:
         page.locator(selector).fill(text, timeout=5000)  # 5-second limit so it doesn't hang forever
     except Exception:
@@ -157,13 +188,38 @@ def fill(page, selector, text, input_time=None, wait_flag=False):
     else:
         print("✅ Input field filled successfully!")
 
-# This function is designed to retrieve text from an HTML element specified by the CSS selector.
+
+# Press a keyboard key on a selected element.
+def press(page, selector, key, input_time=None, wait_flag=False):
+    if not selector:
+        print("❌ Error: Missing CSS selector. Format: fill <selector>")
+        return
+    if not key:
+        print("❌ Error: Missing key string. Format: press <selector> <key>")
+        return
+
+    ok = wait_until_time_or_appear(page, selector, input_time, wait_flag)
+    if ok is False:
+        return
+
+    print(f"➡️ Attempting to press '{key}' on '{selector}'...")
+    try:
+        page.locator(selector).press(key, timeout=5000)
+    except Exception:
+        print("❌ Action failed: Make sure the CSS selector is correct and visible on screen.")
+    finally:
+        print("✅ Key press completed successfully!")
+
+
+# Retrieve text from an HTML element specified by the CSS selector.
 def text(page, selector, input_time=None, wait_flag=False):
     if not selector:
         print("❌ Error: Missing CSS selector. Format: text <selector>")
         return None
 
-    wait_until_time_or_appear(page, selector, input_time, wait_flag)
+    ok = wait_until_time_or_appear(page, selector, input_time, wait_flag)
+    if ok is False:
+        return None
 
     try:
         content = page.locator(selector).text_content(timeout=5000)
@@ -174,7 +230,8 @@ def text(page, selector, input_time=None, wait_flag=False):
         print("❌ Action failed: Make sure the CSS selector is correct and visible on screen.")
         return None
 
-# This function is designed to retrieve an image from an HTML element specified by the CSS selector.
+
+# Retrieve an image from an HTML element specified by the CSS selector.
 def image(page, selector, input_time=None, wait_flag=False):
     global image_capture_count
 
@@ -182,7 +239,9 @@ def image(page, selector, input_time=None, wait_flag=False):
         print("❌ Error: Missing CSS selector. Format: image <selector>")
         return None
 
-    wait_until_time_or_appear(page, selector, input_time, wait_flag)
+    ok = wait_until_time_or_appear(page, selector, input_time, wait_flag)
+    if ok is False:
+        return None
 
     os.makedirs(image_filepath, exist_ok=True)
     image_capture_count += 1
@@ -198,47 +257,98 @@ def image(page, selector, input_time=None, wait_flag=False):
         return None
 
 
-# This function is designed to press a keyboard key on a selected element.
-def press(page, selector, key, input_time=None, wait_flag=False):
-    if not selector:
-        print("❌ Error: Missing CSS selector. Format: press <selector> <key>")
+def list_tabs(context):
+    pages = context.pages
+    if not pages:
+        print("⚠️ No open tabs found.")
         return
-    if not key:
-        print("❌ Error: Missing key string. Format: press <selector> <key>")
+    print("✅ Open tabs:")
+    for index, page in enumerate(pages):
+        try:
+            title = page.title()
+        except Exception:
+            title = "<unavailable>"
+        print(f"  [{index}] {page.url} | {title}")
+
+
+def switch_tab(context, switch_body):
+    # Validate switch_body and tab index
+    if not switch_body:
+        print("❌ Error: switch requires a tab index.")
         return
-
-    wait_until_time_or_appear(page, selector, input_time, wait_flag)
-
-    print(f"Attempting to press '{key}' on '{selector}'...")
     try:
-        page.locator(selector).press(key, timeout=5000)
+        index = int(switch_body)
+    except ValueError:
+        print("❌ Error: switch requires a numeric tab index.")
+        return
+    
+    # Validate whether the tab index exists
+    pages = context.pages
+    if not pages:
+        print("❌ No open tabs to switch.")
+        return None
+    if index < 0 or index >= len(pages):
+        print(f"❌ Invalid tab index {index}. Use the tabs command to see valid tab indexes.")
+        return None
+    
+    # Switch to tab
+    page = pages[index]
+    try:
+        title = page.title()
     except Exception:
-        print("❌ Action failed: Make sure the CSS selector is correct and visible on screen.")
-    else:
-        print("✅ Key press completed successfully!")
+        title = "<unavailable>"
+    print(f"✅ Switched to tab {index}: {page.url} | {title}")
+    return page
 
-
-# This function is designed to run a custom batch of browser actions.
+# Run a custom batch of browser actions.
 def batch(page):
     # Customize this function to perform a series of browser actions.
-    # Example:
-    #     click(page, "button.submit")
-    #     fill(page, "input[name='q']", "Hello world")
-    #     press(page, "input[name='q']", "Enter")
-    #     text(page, ".result")
-    #     image(page, ".screenshot-target")
     # You can also add loops, sleeps, or any other control flow here.
+    # Function prototypes:
+    #    1. click(page, selector, input_time=None, wait_flag=False)
+    #    2. fill(page, selector, text, input_time=None, wait_flag=False)
+    #    3. press(page, selector, key, input_time=None, wait_flag=False)
+    #    4. text(page, selector, input_time=None, wait_flag=False)
+    #    5. image(page, selector, input_time=None, wait_flag=False)
+    # Notes:
+    #    1. selector, input_time, text, key are all of str | None type
+    #    2. key is in the format so that page.locator().press(key) is valid. Examples of key:
+    #        'Enter', 'Control+v', 'a', 'A', 'Digit1'
+    # Example usage:
+    #    click(page, selector, input_time="20:30:00")  # Click a button at 20:30:00
+    #    fill(page, selector, "secure_password", wait_flag=True)  # Fill in text when field appears
+    #    press(page, selector, "Enter")  # Press 'Enter' on an element immediately
+    #    text(page, selector, wait_flag=True)  # Extract text from element when it appears
+    #    image(page, selector, input_time="0:00:00")  # Get image of a element at midnight
     pass
+
+def help():
+    print("=" * 60)
+    print("COMMAND FORMATS:")
+    print("  To click:           click <selector> [-time HH:MM:SS | -wait]")
+    print("  To fill:            fill <selector> -text <text> [-time HH:MM:SS | -wait]")
+    print("  To press a key:     press <selector> -key <key> [-time HH:MM:SS | -wait]")
+    print("      <key> examples:   'Enter', 'control+v', 'a', 'A', 'Digit1'")
+    print("  To get text:        text <selector> [-time HH:MM:SS | -wait]")
+    print("  To get image:       image <selector> [-time HH:MM:SS | -wait]")
+    print("  To list tabs:       tabs")
+    print("  To switch tab:      switch <tab index>")
+    print("  To run batch:       batch")
+    print("  To print help menu: help")
+    print("  To exit:            exit")
+    print("=" * 60)
+
 
 
 def interactive_browser():
-    print("\nLaunching Chromium... Please wait.")
+    print("\n➡️  Launching Chromium... Please wait.")
 
     with sync_playwright() as p:
         browser = p.chromium.launch_persistent_context(
             user_data_dir="./user_data_dir",  # Change this to a valid directory on your system
             headless=False,  # Set to False so you can see the screen!
-            viewport={"width": 1280, "height": 720}
+            viewport={"width": screen_width, "height": screen_height},
+            handle_sigint=False  # so that ctrl+c while waiting will keep the webpage
         )
 
         page = browser.new_page()
@@ -252,21 +362,12 @@ def interactive_browser():
             return
 
         # 1. Print user instructions
-        print("=" * 60)
-        print("COMMAND FORMATS:")
-        print("  To click:         click <selector> [-time HH:MM:SS | -wait]")
-        print("  To fill:          fill <selector> -text <text> [-time HH:MM:SS | -wait]")
-        print("  To press a key:   press <selector> -key <key> [-time HH:MM:SS | -wait]")
-        print("  To get text:      text <selector> [-time HH:MM:SS | -wait]")
-        print("  To get image:     image <selector> [-time HH:MM:SS | -wait]")
-        print("  To run batch:     batch")
-        print("  To exit:          exit")
-        print("=" * 60)
+        help()
 
         # 2. Start the interactive loop
         while True:
             try:
-                user_input = input("Enter command: ").strip()
+                user_input = input("➜ ] Enter command: ").strip()
                 if not user_input:
                     continue
 
@@ -277,6 +378,18 @@ def interactive_browser():
                     break
                 elif action == "batch":
                     batch(page)
+                    continue
+                elif action == "help":
+                    help()
+                    continue
+                elif action == "tabs":
+                    list_tabs(browser)
+                    continue
+                elif action == "switch":
+                    switch_body = user_input[len("switch"):].strip()
+                    new_page = switch_tab(browser, switch_body)
+                    if new_page is not None:
+                        page = new_page
                     continue
 
                 # 4. Parse the flags to handle commands supporting optional or required flags
@@ -298,7 +411,7 @@ def interactive_browser():
 
                 elif action == "press":
                     if required_text == None:
-                        raise ValueError("Expected flags (-text) not present.")
+                        raise ValueError("Expected flags (-key) not present.")
                     press(page, selector, required_text, input_time, wait_flag)
 
                 elif action == "text":
@@ -309,14 +422,17 @@ def interactive_browser():
                 elif action == "image":
                     if required_text != None:
                         raise ValueError("Unexpected extra flags (-text or -key).")
-                    text(page, selector, input_time, wait_flag)
+                    image(page, selector, input_time, wait_flag)
 
                 else:
                     print(f"❌ Unknown action '{action}'.")
                 ###################################################
 
-            except Exception as e:
-                print(f"❌ Action failed: {e.value if hasattr(e, 'value') else e}")
+            except ValueError as e:
+                print(f"❌ Invalid action: {e.value if hasattr(e, 'value') else e}")
+                continue
+            # except Exception as e:
+            #     print(f"❌ Action failed: {e.value if hasattr(e, 'value') else e}")
 
 
 if __name__ == "__main__":

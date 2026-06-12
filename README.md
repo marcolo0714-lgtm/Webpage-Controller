@@ -6,13 +6,15 @@ This repository contains `webtest.py`, a small Playwright-based browser automati
 
 The script launches a Chromium browser (via Chrome channel) and opens a predefined URL. It supports several helper functions to:
 
-- click page elements by CSS selector
-- fill input fields by CSS selector
-- print text content from page elements
-- save screenshots of page elements
-- wait until a specific time or until an element appears before acting
+- click webpage element
+- fill input field with text
+- print text content from a webpage element
+- save screenshots of a webpage element
+- press keyboard keys on a webpage element
 
-Note that you can also directly operate on the webpage instead of using the helper functions.
+All of these functions support waiting until a specific time or until the element appears before acting.
+- A webpage element is specified by its CSS selector. To obtain the CSS selector of a webpage element, right-click on a webpage element, select "Inspect", right-click on the highlighted line on the HTML interface, and select "Copy selector".
+- Note that you can also directly operate on the webpage opened by the program, instead of using the helper functions.
 
 ## Prerequisites
 
@@ -42,28 +44,30 @@ The script will open a browser window and print available command formats.
 Moreover, customize the webpage controller in the following ways:
 
 - Update the `url` variable in `webtest.py` to change the starting page.
-- Adjust `screen_width` and `screen_height` if your display requires a different viewport.
+- Adjust `screen_width` and `screen_height` to
+- Update `wait_flag_timeout` to
 
 ### Supported Commands
 
 - `click <selector> [-time HH:MM:SS | -wait]`
   - Click an element identified by the given CSS selector.
-  - Use `-time HH:MM:SS` to wait until the specified time before clicking.
-  - Use `-wait` to wait until the element appears on screen (up to 30 minutes) before clicking.
 
-- `fill <selector> <text> [-time HH:MM:SS | -wait]`
+- `fill <selector> -text <text> [-time HH:MM:SS | -wait]`
   - Fill an input field identified by the given CSS selector with the provided text.
-  - Use `-time HH:MM:SS` to delay the fill until a specific time.
-  - Use `-wait` to wait until the element appears on screen (up to 30 minutes) before filling.
+
+- `press <selector> -key <key> [-time HH:MM:SS | -wait]`
+  - Press a keyboard key on a webpage element identified by its CSS selector.
 
 - `text <selector> [-time HH:MM:SS | -wait]`
   - Print and return the text content of a page element identified by the CSS selector.
-  - Supports `-time` and `-wait` like `click` and `fill`.
 
 - `image <selector> [-time HH:MM:SS | -wait]`
   - Save a screenshot of the page element identified by the CSS selector.
   - Files are saved under `screenshots/` as `capture1.png`, `capture2.png`, etc.
-  - Supports `-time` and `-wait` like `click` and `fill`.
+
+All of the above functions support either a `-time` or  `-wait` flag:
+  - Use `-time HH:MM:SS` to wait until the specified time before clicking.
+  - Use `-wait` to wait until the element appears on screen (up to 30 minutes, can be customized) before clicking.
 
 - `exit`
   - Close the browser and exit the interactive loop.
@@ -71,26 +75,6 @@ Moreover, customize the webpage controller in the following ways:
 ## Video Showcase
 
 
-## `webtest.py` functions specifications
-
-- `click(page, selector, input_time=None, wait_flag=False)`
-  - Clicks a page element by CSS selector within a 5 second limit.
-  - Prints errors and returns if the selector is missing, invalid, or not visible.
-
-- `fill(page, selector, text, input_time=None, wait_flag=False)`
-  - Fills an input element by CSS selector with the provided text within a 5 second limit.
-  - Prints errors if the selector is missing, invalid, not visible, or the text is empty.
-
-- `text(page, selector, input_time=None, wait_flag=False)`
-  - Prints and returns the text content of the selected element.
-
-- `image(page, selector, input_time=None, wait_flag=False)`
-  - Saves a screenshot of the selected element.
-  - Screenshots are stored in `screenshots/` with sequential names like `capture1.png`, `capture2.png`, etc.
-
-All functions supports the following 2 parameters:
-  - `input_time` to delay the fill until a specific `HH:MM:SS` time.
-  - `wait_flag` to wait for the selector to appear on screen for up to 30 minutes.
 
 ## Other helper files
 
@@ -101,3 +85,6 @@ All functions supports the following 2 parameters:
 
 - Make sure the CSS selectors you provide are present and visible on the loaded page.
 - The script is intended for experimentation and automating simple web tasks, not for large-scale scraping.
+
+## Future Directions
+- 
