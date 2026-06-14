@@ -52,15 +52,13 @@ def get_target_datetime(input_time):
 def parse_flags(command_body):
     """Parse selector, required flags (-text or -key), and optional flags (-time or -wait) from the command body.
     Returns (selector -> str | None, required_text -> str | None, time_value -> str | None, wait_flag -> bool).
-    Raises ValueError if more than 1 flag of the same kind (required or optional) are present.
+    Raises ValueError if more than 1 kind of required flags are present.
     """
     tokens = list(command_body.split())
 
     # Parsing optional flags (-time or -wait)
     has_time = "-time" in tokens
     wait_flag = "-wait" in tokens
-    if has_time and wait_flag:
-        raise ValueError("Cannot use both -time and -wait flags simultaneously.")
     try:
         time_value = tokens[tokens.index("-time") + 1] if has_time else None
     except:
@@ -72,7 +70,10 @@ def parse_flags(command_body):
 
     if has_text and has_key:
         raise ValueError("Cannot use both -text and -key flags simultaneously.")
-    if has_time:
+
+    if has_time and wait_flag:
+        final_flag_pos = min(tokens.index("-time"), tokens.index("-wait"))
+    elif has_time:
         final_flag_pos = tokens.index("-time")
     elif wait_flag:
         final_flag_pos = tokens.index("-wait")
@@ -85,6 +86,7 @@ def parse_flags(command_body):
         req_flag_pos = tokens.index("-key")
     else:
         req_flag_pos = -1
+
     if req_flag_pos > final_flag_pos:
         raise ValueError(f"Required flags ({"-text" if has_text else "-key"}) appears before optional flags ({"-time" if has_time else "-wait"}).")
     
@@ -105,8 +107,7 @@ def parse_flags(command_body):
 
 
 def wait_until_time_or_appear(page, selector, input_time, wait_flag):
-    """Wait until a target time or until selector appears.
-
+    """Wait until a target time and/or until selector appears.
     Returns True when wait completed normally, False when user cancelled.
     """
     # Wait for a specific time (polling so user can Ctrl+C to cancel)
@@ -122,12 +123,11 @@ def wait_until_time_or_appear(page, selector, input_time, wait_flag):
             while datetime.now() < target_datetime:
                 time.sleep(0.01)
         except KeyboardInterrupt:
-            print("⚠️  Wait cancelled by user.")
+            print("⚠️ Wait cancelled by user.")
             return False
-        return True
 
-    # Wait for selector to appear (polling loop so user can Ctrl+C to cancel)
-    elif wait_flag:
+    # Wait for selector to appear after optional time wait
+    if wait_flag:
         deadline = datetime.now() + timedelta(minutes=wait_flag_timeout)
         print(f"🕒 Waiting for selector '{selector}' to appear on screen (timeout: {wait_flag_timeout} mins). Press Ctrl+C to cancel.")
         try:
@@ -142,7 +142,7 @@ def wait_until_time_or_appear(page, selector, input_time, wait_flag):
             print(f"❌ Action failed: Selector '{selector}' did not appear within {wait_flag_timeout} minutes.")
             return True
         except KeyboardInterrupt:
-            print("⚠️  Wait cancelled by user.")
+            print("⚠️ Wait cancelled by user.")
             return False
 
     return True
@@ -260,7 +260,7 @@ def image(page, selector, input_time=None, wait_flag=False):
 def list_tabs(page):
     # To refresh state of pages
     try:
-        page.wait_for_timeout(100)
+        page.wait_for_timeout(1)
     except:
         pass
 
@@ -271,16 +271,21 @@ def list_tabs(page):
     print("✅ Open tabs:")
     for index, page in enumerate(pages):
         try:
-            title = page.title()
+            if page.is_closed():
+                continue
+            print(f"  [{index}] {page.url} | {page.title()}")
         except Exception:
-            title = "<unavailable>"
-        print(f"  [{index}] {page.url} | {title}")
+            try:
+                print(f"  [{index}] {page.url} | <unavailable>")
+            except Exception:
+                continue
+
 
 
 def switch_tab(page, switch_body):
     # To refresh state of pages
     try:
-        page.wait_for_timeout(100)
+        page.wait_for_timeout(1)
     except:
         pass
 
@@ -294,7 +299,7 @@ def switch_tab(page, switch_body):
         print("❌ Error: switch requires a numeric tab index.")
         return
     
-    # Validate whether the tab index exists
+    # Validate whether the tab index is within range of open tabs
     pages = page.context.pages
     if not pages:
         print("❌ No open tabs to switch.")
@@ -306,6 +311,9 @@ def switch_tab(page, switch_body):
     # Switch to tab
     page = pages[index]
     try:
+        if page.is_closed():
+            print("❌ The selected tab is closed. Cannot switch.")
+            return
         title = page.title()
     except Exception:
         title = "<unavailable>"
@@ -316,6 +324,14 @@ def switch_tab(page, switch_body):
 def reload(page, input_time=None):
     ok = wait_until_time_or_appear(page, None, input_time, False)  # reload doesn't need a selector or wait_flag, but we can still use the time-based waiting
     if ok is False:
+        return
+    
+    try:
+        page.wait_for_timeout(1)     # To refresh state of pages
+        if page.is_closed():
+            assert False, "Current page is closed. Cannot reload."
+    except Exception as e:
+        print("❌ The page cannot be loaded properly or the page does not exist. Reload aborted.")
         return
 
     print("➡️ Reloading page...")
@@ -343,14 +359,15 @@ def batch(page):
     #    1. selector, input_time, text, key are all of str | None type
     #    2. key is in the format so that page.locator().press(key) is valid. Examples of key:
     #        'Enter', 'Control+V', 'a', 'A', 'Digit1'
-    #    3. Confirm that "at most one of input_time or wait_flag is not None" when calling the functions.
-    #       Otherwise, it may cause unexpected behavior.
+    #    3. Both input_time and wait_flag may be used together. When both are provided, the function
+    #       waits until the scheduled time first and then waits for the selector to appear.
+    #    4. Use page.wait_for_timeout(milliseconds) instead of time.sleep() to add extra waiting time between actions if needed.
     # Example usage:
-    #    click(page, selector, input_time="20:30:00")  # Click a button at 8:30pm
+    #    click(page, selector, input_time="20:30:00", wait_flag=True)  # Click a button at 8:30pm when it appears
     #    fill(page, selector, "secure_password", wait_flag=True)  # Fill in text when field appears
     #    press(page, selector, "Enter")  # Press 'Enter' on an element immediately
     #    text(page, selector, wait_flag=True)  # Extract text from element when it appears
-    #    image(page, selector, input_time="00:00:00")  # Get image of a element at midnight
+    #    image(page, selector, input_time="00:00:00")  # Get image of an element at midnight
     #    switch_tab(page, "1")  # Switch to the second tab
     #    reload(page, input_time="09:15:00")  # Reload the page at 9:15am
     pass
@@ -359,15 +376,15 @@ def batch(page):
 def help():
     print("=" * 60)
     print("COMMAND FORMATS:")
-    print("  To click:           click <selector> [-time HH:MM:SS | -wait]")
-    print("  To fill:            fill <selector> -text <text> [-time HH:MM:SS | -wait]")
-    print("  To press a key:     press <selector> -key <key> [-time HH:MM:SS | -wait]")
+    print("  To click:           click <selector> [-time HH:MM:SS] [-wait]")
+    print("  To fill:            fill <selector> -text <text> [-time HH:MM:SS] [-wait]")
+    print("  To press a key:     press <selector> -key <key> [-time HH:MM:SS] [-wait]")
     print("      <key> examples:   'Enter', 'Control+V', 'a', 'A', 'Digit1'")
-    print("  To get text:        text <selector> [-time HH:MM:SS | -wait]")
-    print("  To get image:       image <selector> [-time HH:MM:SS | -wait]")
+    print("  To get text:        text <selector> [-time HH:MM:SS] [-wait]")
+    print("  To get image:       image <selector> [-time HH:MM:SS] [-wait]")
     print("  To list tabs:       tabs")
     print("  To switch tab:      switch <tab index>")
-    print("  To reload page:     reload [-time HH:MM:SS | -wait]")
+    print("  To reload page:     reload [-time HH:MM:SS]")
     print("  To run batch:       batch")
     print("  To print help menu: help")
     print("  To exit:            exit")
@@ -376,7 +393,7 @@ def help():
 
 # Main interactive loop to accept user commands and perform browser actions accordingly.
 def interactive_browser():
-    print("\n➡️  Launching Chromium... Please wait.")
+    print("\n➡️ Launching Chromium... Please wait.")
 
     with sync_playwright() as p:
         browser = p.chromium.launch_persistent_context(
@@ -405,6 +422,13 @@ def interactive_browser():
                 user_input = input("➜ ] Enter command: ").strip()
                 if not user_input:
                     continue
+                    
+                try:
+                    page.wait_for_timeout(1)   # To refresh state of pages
+                except:
+                    pass
+                if page.is_closed():
+                    print("⚠️ Warning: The current page is closed. Some actions may not work until you switch to another open tab.")
 
                 # 3. Handle standalone commands
                 action = user_input.split(" ", 1)[0].lower().strip()
@@ -430,7 +454,8 @@ def interactive_browser():
                 # 4. Parse the flags to handle commands supporting optional or required flags
                 command_body = user_input[len(action):].strip()
                 selector, required_text, input_time, wait_flag = parse_flags(command_body)
-                if selector == "" and action != "reload":
+
+                if selector == "" and action in ["click", "fill", "press", "text", "image"]:
                     raise ValueError("Selector is required, but not present.")
 
                 ###################################################
@@ -470,11 +495,14 @@ def interactive_browser():
                     print(f"❌ Unknown action '{action}'.")
                 ###################################################
 
+           # 5. Catch any errors in command parsing or execution and print user-friendly messages
             except ValueError as e:
                 print(f"❌ Invalid action: {e.value if hasattr(e, 'value') else e}")
                 continue
             except Exception as e:
                 print(f"❌ Action failed: {e.value if hasattr(e, 'value') else e}")
+            
+            print()  # Print new line for readability between commands
 
 
 if __name__ == "__main__":
