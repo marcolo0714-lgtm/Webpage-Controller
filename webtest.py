@@ -1,7 +1,6 @@
 from playwright.sync_api import sync_playwright
 import os
 import sys
-import time
 from datetime import datetime, timedelta
 
 url = "https://www.lib.cuhk.edu.hk/en/"
@@ -61,7 +60,7 @@ def parse_flags(command_body):
     wait_flag = "-wait" in tokens
     try:
         time_value = tokens[tokens.index("-time") + 1] if has_time else None
-    except:
+    except (IndexError, ValueError):
         raise ValueError("-time flag present, but contain no arguments.")
     
     # Parsing required flags (-text or -key)
@@ -121,29 +120,24 @@ def wait_until_time_or_appear(page, selector, input_time, wait_flag):
         print(f"🕒 Waiting until {input_time} (in {time_difference(target_datetime)})... Press Ctrl+C to cancel.")
         try:
             while datetime.now() < target_datetime:
-                time.sleep(0.01)
+                page.wait_for_timeout(10)
         except KeyboardInterrupt:
             print("⚠️ Wait cancelled by user.")
             return False
 
-    # Wait for selector to appear after optional time wait
     if wait_flag:
-        deadline = datetime.now() + timedelta(minutes=wait_flag_timeout)
+        timeout_ms = wait_flag_timeout * 60 * 1000
         print(f"🕒 Waiting for selector '{selector}' to appear on screen (timeout: {wait_flag_timeout} mins). Press Ctrl+C to cancel.")
         try:
-            while datetime.now() < deadline:
-                try:
-                    if page.locator(selector).count() > 0:
-                        return True
-                except Exception:
-                    # ignore transient locator errors while waiting
-                    pass
-                time.sleep(0.01)
-            print(f"❌ Action failed: Selector '{selector}' did not appear within {wait_flag_timeout} minutes.")
+            page.locator(selector).wait_for(state="attached", timeout=timeout_ms)
             return True
         except KeyboardInterrupt:
             print("⚠️ Wait cancelled by user.")
             return False
+        except Exception:
+            pass
+        print(f"❌ Action failed: Selector '{selector}' did not appear within {wait_flag_timeout} minutes.")
+        return True
 
     return True
 
@@ -160,9 +154,9 @@ def click(page, selector, input_time=None, wait_flag=False):
 
     print(f"➡️ Attempting to click: '{selector}'...")
     try:
-        page.locator(selector).click(timeout=5000)  # 5-second limit so it doesn't hang forever
-    except Exception:
-        print("❌ Action failed: Make sure the CSS selector is correct and visible on screen.")
+        page.locator(selector).click(timeout=30000)
+    except Exception as e:
+        print(f"❌ Action failed: {e}")
     else:
         print("✅ Button clicked successfully!")
 
@@ -182,9 +176,9 @@ def fill(page, selector, text, input_time=None, wait_flag=False):
 
     print(f"➡️ Attempting to fill: '{selector}' with '{text}'...")
     try:
-        page.locator(selector).fill(text, timeout=5000)  # 5-second limit so it doesn't hang forever
-    except Exception:
-        print("❌ Action failed: Make sure the CSS selector is correct and visible on screen.")
+        page.locator(selector).fill(text, timeout=30000)
+    except Exception as e:
+        print(f"❌ Action failed: {e}")
     else:
         print("✅ Input field filled successfully!")
 
@@ -204,9 +198,9 @@ def press(page, selector, key, input_time=None, wait_flag=False):
 
     print(f"➡️ Attempting to press '{key}' on '{selector}'...")
     try:
-        page.locator(selector).press(key, timeout=5000)
-    except Exception:
-        print("❌ Action failed: Make sure the CSS selector is correct and visible on screen, and the -key flag is valid.")
+        page.locator(selector).press(key, timeout=30000)
+    except Exception as e:
+        print(f"❌ Action failed: {e}")
     else:
         print("✅ Key press completed successfully!")
 
@@ -222,12 +216,12 @@ def text(page, selector, input_time=None, wait_flag=False):
         return None
 
     try:
-        content = page.locator(selector).text_content(timeout=5000)
+        content = page.locator(selector).text_content(timeout=30000)
         text_value = content if content is not None else ""
         print(f"✅ Text content retrieved': {text_value}")
         return text_value
-    except Exception:
-        print("❌ Action failed: Make sure the CSS selector is correct and visible on screen.")
+    except Exception as e:
+        print(f"❌ Action failed: {e}")
         return None
 
 
@@ -244,16 +238,16 @@ def image(page, selector, input_time=None, wait_flag=False):
         return None
 
     os.makedirs(image_filepath, exist_ok=True)
-    image_capture_count += 1
-    filename = f"capture{image_capture_count}.png"
+    filename = f"capture{image_capture_count + 1}.png"
     path = os.path.join(image_filepath, filename)
 
     try:
-        page.locator(selector).screenshot(path=path)
+        page.locator(selector).screenshot(path=path, timeout=30000)
+        image_capture_count += 1
         print(f"✅ Saved image for '{selector}' to {path}")
         return path
-    except Exception:
-        print("❌ Action failed: Make sure the CSS selector is correct and visible on screen, and the screenshot path exists.")
+    except Exception as e:
+        print(f"❌ Action failed: {e}")
         return None
 
 
@@ -261,7 +255,7 @@ def list_tabs(page):
     # To refresh state of pages
     try:
         page.wait_for_timeout(1)
-    except:
+    except Exception:
         pass
 
     pages = page.context.pages
@@ -286,7 +280,7 @@ def switch_tab(page, switch_body):
     # To refresh state of pages
     try:
         page.wait_for_timeout(1)
-    except:
+    except Exception:
         pass
 
     # Validate switch_body and tab index
@@ -329,7 +323,7 @@ def reload(page, input_time=None):
     try:
         page.wait_for_timeout(1)     # To refresh state of pages
         if page.is_closed():
-            assert False, "Current page is closed. Cannot reload."
+            raise Exception("Current page is closed. Cannot reload.")
     except Exception as e:
         print("❌ The page cannot be loaded properly or the page does not exist. Reload aborted.")
         return
@@ -337,8 +331,8 @@ def reload(page, input_time=None):
     print("➡️ Reloading page...")
     try:
         page.reload(timeout=10000)  # 10-second limit so it doesn't hang forever
-    except Exception:
-        print("⚠️ The page is still loading or the reload failed. Please check the page manually.")
+    except Exception as e:
+        print(f"⚠️ The page is still loading or the reload failed: {e}")
     else:
         print("✅ Page reloaded successfully!")
 
@@ -423,10 +417,10 @@ def interactive_browser():
                 if not user_input:
                     continue
                     
-                try:
-                    page.wait_for_timeout(1)   # To refresh state of pages
-                except:
-                    pass
+                # try:
+                #     page.wait_for_timeout(1)   # To refresh state of pages
+                # except Exception:
+                #     pass
                 if page.is_closed():
                     print("⚠️ Warning: The current page is closed. Some actions may not work until you switch to another open tab.")
 
@@ -497,10 +491,10 @@ def interactive_browser():
 
            # 5. Catch any errors in command parsing or execution and print user-friendly messages
             except ValueError as e:
-                print(f"❌ Invalid action: {e.value if hasattr(e, 'value') else e}")
+                print(f"❌ Invalid action: {e}")
                 continue
             except Exception as e:
-                print(f"❌ Action failed: {e.value if hasattr(e, 'value') else e}")
+                print(f"❌ Action failed: {e}")
             
             print()  # Print new line for readability between commands
 

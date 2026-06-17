@@ -2,6 +2,7 @@
 
 `Webpage Controller` is a small browser automation utility built around `webtest.py`.
 It uses Playwright to launch Chromium, open a predefined URL, and let you run simple interactive commands against page elements.
+The script maintains a `BrowserSession` that wraps the browser context and tracks the current page, ensuring resilience to page closures or updates.
 
 ## What it does
 
@@ -51,20 +52,20 @@ You can change default behavior by editing the following values in `webtest.py`:
 
 Supported commands in the prompt:
 
-- `click <selector> [-time HH:MM:SS | -wait]`
+- `click <selector> [-time HH:MM:SS] [-wait]`
   - Click the element matching the CSS selector.
 
-- `fill <selector> -text <text> [-time HH:MM:SS | -wait]`
+- `fill <selector> -text <text> [-time HH:MM:SS] [-wait]`
   - Fill an input with the provided text.
 
-- `press <selector> -key <key> [-time HH:MM:SS | -wait]`
+- `press <selector> -key <key> [-time HH:MM:SS] [-wait]`
   - Press a keyboard key on the element.
-  - Examples: `Enter`, `Control+v`, `a`, `A`, `Digit1`
+  - Examples: `Enter`, `Control+V`, `a`, `A`, `Digit1`
 
-- `text <selector> [-time HH:MM:SS | -wait]`
+- `text <selector> [-time HH:MM:SS] [-wait]`
   - Print the text content of the element.
 
-- `image <selector> [-time HH:MM:SS | -wait]`
+- `image <selector> [-time HH:MM:SS] [-wait]`
   - Save a screenshot of the element.
   - Files are saved under `image_filepath` (defaults to `screenshots/`) as `capture1.png`, `capture2.png`, etc.
 
@@ -79,8 +80,10 @@ Supported commands in the prompt:
   - Supports `-time` scheduling; does not support `-wait`.
 
 - `batch`
-  - Execute the custom `batch(page)` routine.
-  - Edit `webtest.py` to add your own sequence of actions.
+  - Execute the custom `batch(session)` routine.
+  - Edit the `batch(session)` function in `webtest.py` to add your own sequence of actions.
+  - Access the current page through `session.get_page()` and the context through `session.context`.
+  - Use `session.get_page().wait_for_timeout(milliseconds)` to add delays between actions (preferred over `time.sleep()`).
 
 - `help`
   - Print the command menu.
@@ -92,13 +95,24 @@ Supported commands in the prompt:
 
 - `-time HH:MM:SS` waits until the next occurrence of that clock time.
 - `-wait` waits for the element to appear in the page, up to `wait_flag_timeout` minutes.
+- Both `-time` and `-wait` can be used together: the function waits until the scheduled time first, then waits for the element.
 - `reload` can be scheduled with `-time` but does not accept `-wait`.
+
+## Architecture
+
+The script uses a `BrowserSession` class that wraps the browser context and maintains the current page state. This design ensures that:
+- Functions receive the session (context wrapper) instead of individual page objects
+- If a page is closed or updated elsewhere, the session automatically validates and recovers
+- Functions always work with a fresh, valid page reference through `session.get_page()`
+- Switching between tabs updates the session's current page for all subsequent operations
 
 ## Notes
 
 - Use a valid and visible CSS selector for each element you target.
 - Do not use quotation marks around \<selector> or \<key> (for `press`) in the command input. Only use quotation marks around \<text> (for `fill`) if you want to fill with text that really contains quotation marks.
+- When using both `-time` and `-wait` together, the action first waits until the scheduled time, then polls for the element to appear.
 - The script uses a persistent Chromium context and stores browser profile data in `user_data_dir/`.
+- The `BrowserSession` automatically handles cases where the current page is closed, attempting to switch to another open page if available.
 - This tool is meant for small automation experiments, not large-scale scraping.
 
 ## Other helper files
