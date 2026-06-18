@@ -2,7 +2,7 @@
 
 `Webpage Controller` is a small browser automation utility built around `webtest.py`.
 It uses Playwright to launch Chromium, open a predefined URL, and let you run simple interactive commands against page elements.
-The script maintains a `BrowserSession` that wraps the browser context and tracks the current page, ensuring resilience to page closures or updates.
+The script maintains an active Playwright `page` object and a persistent browser context, allowing command-based control of the current tab and tab switching.
 
 ## What it does
 
@@ -80,10 +80,10 @@ Supported commands in the prompt:
   - Supports `-time` scheduling; does not support `-wait`.
 
 - `batch`
-  - Execute the custom `batch(session)` routine.
-  - Edit the `batch(session)` function in `webtest.py` to add your own sequence of actions.
-  - Access the current page through `session.get_page()` and the context through `session.context`.
-  - Use `session.get_page().wait_for_timeout(milliseconds)` to add delays between actions (preferred over `time.sleep()`).
+  - Execute the custom `batch(page)` routine.
+  - Edit the `batch(page)` function in `webtest.py` to add your own sequence of actions.
+  - The function receives the current Playwright `page` object.
+  - Use `page.wait_for_timeout(milliseconds)` to add delays between actions (preferred over `time.sleep()`).
 
 - `help`
   - Print the command menu.
@@ -100,11 +100,7 @@ Supported commands in the prompt:
 
 ## Architecture
 
-The script uses a `BrowserSession` class that wraps the browser context and maintains the current page state. This design ensures that:
-- Functions receive the session (context wrapper) instead of individual page objects
-- If a page is closed or updated elsewhere, the session automatically validates and recovers
-- Functions always work with a fresh, valid page reference through `session.get_page()`
-- Switching between tabs updates the session's current page for all subsequent operations
+The script uses Playwright's synchronous API with a persistent Chromium browser context. It keeps the current `page` object in a local variable and updates that variable when tabs are switched.
 
 ## Notes
 

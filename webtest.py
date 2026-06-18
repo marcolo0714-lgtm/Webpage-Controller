@@ -417,10 +417,10 @@ def interactive_browser():
                 if not user_input:
                     continue
                     
-                # try:
-                #     page.wait_for_timeout(1)   # To refresh state of pages
-                # except Exception:
-                #     pass
+                try:
+                    page.wait_for_timeout(1)   # To refresh state of pages
+                except Exception:
+                    pass
                 if page.is_closed():
                     print("⚠️ Warning: The current page is closed. Some actions may not work until you switch to another open tab.")
 
