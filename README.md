@@ -43,7 +43,7 @@ Edit these values in `webtest.py`:
 | Variable | Purpose | Default |
 |---|---|---|
 | `url` | Page opened at startup | `https://www.lib.cuhk.edu.hk/en/` |
-| `screen_width` / `screen_height` | Browser viewport (pixels) | `1525` × `475` |
+| `screen_width` / `screen_height` | Browser viewport (pixels) | `1280` × `720` |
 | `wait_flag_timeout` | Max wait for `-wait` (minutes) | `30` |
 | `standard_timeout` | Timeout for individual actions (seconds) | `5` |
 | `image_filepath` | Folder for element screenshots | `screenshots/` |
@@ -85,6 +85,11 @@ exit
 | `help` | Print the command menu |
 | `exit` | Close the browser and exit |
 
+## Video Showcase
+
+[![Watch the video on YouTube](https://youtu.be/W6z0WTP7a5Y)](https://youtu.be/W6z0WTP7a5Y)
+
+
 ## IMPORTANT: Do not manually open or navigate tabs
 
 This CLI does **not** support tabs opened manually in the browser window (Ctrl+T, Ctrl+click, typing URLs in the address bar). Playwright cannot reliably track pages created outside its own API, and commands like `tabs`, `switch`, `click`, `fill`, etc. will silently fail or produce incorrect results on manually opened tabs.
@@ -107,7 +112,7 @@ This CLI does **not** support tabs opened manually in the browser window (Ctrl+T
 | Flag | Behavior |
 |---|---|
 | `-time HH:MM:SS` | Waits until the next occurrence of that clock time before executing the action. Ctrl+C cancels. |
-| `-wait` | Polls for the CSS selector to appear in the DOM (up to `wait_flag_timeout` minutes). Checks every ~100 ms. Ctrl+C cancels. |
+| `-wait` | Polls for the CSS selector to appear in the DOM (up to `wait_flag_timeout` minutes). Checks every ~10 ms. Ctrl+C cancels. |
 | Both together | Waits until the scheduled time, then polls for the selector. |
 
 ### Program flow during a wait
@@ -126,12 +131,12 @@ while deadline not reached:
         return "cancelled"
     if page URL changed:           ← print "Page navigated to: ..."
         update tracking
-    try page.locator(selector).wait_for(timeout=100ms):
+    try page.locator(selector).wait_for(timeout=10ms):
         if selector found → return "ok"
         if not → continue looping
 ```
 
-The 100 ms `wait_for` timeout means each poll is quick. If the selector exists, it returns immediately. If not, it blocks for at most 100 ms and then the loop checks the cancellation flag and URL again.
+The 10 ms `wait_for` timeout means each poll is quick. If the selector exists, it returns immediately. If not, it blocks for at most 10 ms and then the loop checks the cancellation flag and URL again.
 
 ### Signal handling (Ctrl+C)
 
@@ -165,8 +170,8 @@ This approach avoids Playwright's internal `CancelledError` propagation, which w
 - Use valid, visible CSS selectors for elements.
 - Do not quote selectors or keys in command input. Quote text for `fill` only if the text itself contains quotation marks.
 - The `batch()` function in `webtest.py` is a stub for users to customize with their own action sequences.
-- The browser profile is stored persistently in `user_data_dir/` — cookies, localStorage, and session data survive across restarts.
-- Screenshots saved by `image` are numbered by scanning for the smallest unused `captureX.png` in `screenshots/`.
+- The browser profile is stored persistently in `user_data_dir` (defaults to `user_data_dir/`) — cookies, localStorage, and session data survive across restarts.
+- Screenshots saved by `image` are numbered by scanning for the smallest unused `captureX.png` in `image_filepath` (defaults to `screenshots/`).
 
 ## Other files
 

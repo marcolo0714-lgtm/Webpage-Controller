@@ -4,30 +4,36 @@ import os
 import signal
 from datetime import datetime, timedelta
 
+# --- Configuration ---
+url = "https://www.lib.cuhk.edu.hk/en/"
+# url = "https://www.hkemobility.gov.hk/tc/route-search/pt"
+# url = "http://youtube.com"
+
+screen_width = 1280
+screen_height = 720
+wait_flag_timeout = 30  # minutes
+standard_timeout = 5    # seconds
+
+image_filepath = "screenshots/"
+
+
+# --- Signal handling for Ctrl+C ---
+# Using an OS-level signal handler instead of Python's KeyboardInterrupt because
+# asyncio.run() cancels the main task on SIGINT, which leaves Playwright's CDP
+# connection in a stuck state. By consuming the signal here and setting a flag,
+# the polling loops in wait_until_time_or_appear can check _cancelled and return
+# cleanly without ever interrupting a Playwright operation mid-flight.
+
 _cancelled = False
 
 def _handle_sigint(signum, frame):
     global _cancelled
     _cancelled = True
 
-url = "https://www.lib.cuhk.edu.hk/en/"
-# url = "https://www.hkemobility.gov.hk/tc/route-search/pt"
-# url = "http://youtube.com"
 
-screen_width = 1525  # 1525
-screen_height = 475  # 825
-wait_flag_timeout = 30  # in minutes
-standard_timeout = 5  # in seconds
-
-image_filepath = "screenshots/"
-image_capture_count = 0
-
-
+"""Return a human-readable string for the time until target_datetime.
+If the target has already passed today, wraps around to tomorrow (adds 86400s)."""
 def time_difference(target_datetime):
-    """
-    Calculates the difference between target_datetime and the current time,
-    and returns a formatted string: 'x hours y minutes z seconds'
-    """
     now = datetime.now()
     time_delta = target_datetime - now
     total_seconds = int(time_delta.total_seconds())
@@ -38,9 +44,9 @@ def time_difference(target_datetime):
     seconds = total_seconds % 60
     return f"{hours} hours {minutes} minutes {seconds} seconds"
 
-
+"""Parse HH:MM:SS and return a datetime for its NEXT occurrence.
+If the time has already passed today, returns it for tomorrow instead."""
 def get_target_datetime(input_time):
-    """Return a datetime for the NEXT occurrence of the provided HH:MM:SS time."""
     try:
         target_time = datetime.strptime(input_time, "%H:%M:%S").time()
     except ValueError:
@@ -51,13 +57,21 @@ def get_target_datetime(input_time):
     return target_datetime
 
 
+"""Parse a command body into (selector, required_text, time_value, wait_flag).
+
+The command body is everything after the action word. It may contain:
+    - A CSS selector at the start.
+    - Optional flags: -time HH:MM:SS  and/or  -wait
+    - Required flags: -text <text>  OR  -key <key> (mutually exclusive)
+
+The selector is everything before the first flag (or the whole body if no flags).
+The required_text is everything between -text/-key and the next flag (or end).
+Returns (selector, required_text, time_value, wait_flag).
+Raises ValueError on invalid flag combinations or missing arguments."""
 def parse_flags(command_body):
-    """Parse selector, required flags (-text or -key), and optional flags (-time or -wait) from the command body.
-    Returns (selector -> str | None, required_text -> str | None, time_value -> str | None, wait_flag -> bool).
-    Raises ValueError if more than 1 kind of required flags are present.
-    """
     tokens = list(command_body.split())
 
+    # Detect which optional and required flags are present
     has_time = "-time" in tokens
     wait_flag = "-wait" in tokens
     try:
@@ -71,6 +85,7 @@ def parse_flags(command_body):
     if has_text and has_key:
         raise ValueError("Cannot use both -text and -key flags simultaneously.")
 
+    # Determine where the selector ends: position of the leftmost flag (or end)
     if has_time and wait_flag:
         final_flag_pos = min(tokens.index("-time"), tokens.index("-wait"))
     elif has_time:
@@ -80,6 +95,7 @@ def parse_flags(command_body):
     else:
         final_flag_pos = len(tokens)
 
+    # Position of the required flag (-text or -key), used to slice its argument
     if has_text:
         req_flag_pos = tokens.index("-text")
     elif has_key:
@@ -87,9 +103,11 @@ def parse_flags(command_body):
     else:
         req_flag_pos = -1
 
+    # Enforce that required flags appear before optional flags
     if req_flag_pos > final_flag_pos:
         raise ValueError(f"Required flags ({"-text" if has_text else "-key"}) appears before optional flags ({"-time" if has_time else "-wait"}).")
 
+    # Extract the text/key argument: everything between the required flag and the next flag
     if has_text or has_key:
         required_text = ' '.join(tokens[req_flag_pos + 1: final_flag_pos])
         if required_text == "":
@@ -97,6 +115,7 @@ def parse_flags(command_body):
     else:
         required_text = None
 
+    # Extract the selector: everything before the leftmost flag
     if req_flag_pos == -1:
         selector = ' '.join(tokens[0 : final_flag_pos])
     else:
@@ -105,10 +124,16 @@ def parse_flags(command_body):
     return selector, required_text, time_value, wait_flag
 
 
+"""Core wait function for -time and -wait flags.
+
+-time:  Busy-waits until the target clock time, checking _cancelled each iteration
+        so Ctrl+C (via the signal handler) can interrupt cleanly.
+-wait:  Polls for the selector using page.locator.wait_for with a 100ms timeout.
+        Between checks, verifies the cancellation flag and tracks URL changes.
+        Uses a 100ms timeout so each check is fast and the loop remains responsive.
+
+Returns (ok, page) — ok is True when wait completed, False when user cancelled."""
 async def wait_until_time_or_appear(page, selector, input_time, wait_flag, current_tab_index=0):
-    """Wait until a target time and/or until selector appears.
-    Returns (ok, maybe_recovered_page) — ok is True when wait completed,
-    False when user cancelled. The returned page may differ if recovery happened."""
     global _cancelled
 
     if input_time:
@@ -119,10 +144,10 @@ async def wait_until_time_or_appear(page, selector, input_time, wait_flag, curre
             return True, page
 
         print(f"🕒 Waiting until {input_time} (in {time_difference(target_datetime)})... Press Ctrl+C to cancel.")
-        _cancelled = False
+        _cancelled = False      # reset from previous command
         previous_url = page.url
         while datetime.now() < target_datetime:
-            if _cancelled:
+            if _cancelled:       # set by OS-level SIGINT handler
                 print("⚠️ Wait cancelled by user.")
                 return False, page
             if page.url != previous_url:
@@ -142,7 +167,8 @@ async def wait_until_time_or_appear(page, selector, input_time, wait_flag, curre
                 print(f"🔗 Page navigated to: {page.url}")
                 previous_url = page.url
             try:
-                await page.locator(selector).wait_for(state="attached", timeout=100)
+                # keeps the loop responsive to cancellation and to URL changes. If the selector appears, returns immediately.
+                await page.locator(selector).wait_for(state="attached", timeout=10)  
                 return True, page
             except Exception:
                 pass
@@ -152,6 +178,7 @@ async def wait_until_time_or_appear(page, selector, input_time, wait_flag, curre
     return True, page
 
 
+"""Click the element matching the CSS selector. Returns the page object (possibly unchanged)."""
 async def click(page, selector, input_time=None, wait_flag=False, current_tab_index=0):
     if not selector:
         print("❌ Error: Missing CSS selector. Format: click <selector>")
@@ -171,6 +198,7 @@ async def click(page, selector, input_time=None, wait_flag=False, current_tab_in
     return page
 
 
+"""Fill text into an input field matching the CSS selector. Returns the page object (possibly unchanged)."""
 async def fill(page, selector, text, input_time=None, wait_flag=False, current_tab_index=0):
     if not selector:
         print("❌ Error: Missing CSS selector. Format: fill <selector>")
@@ -193,6 +221,9 @@ async def fill(page, selector, text, input_time=None, wait_flag=False, current_t
     return page
 
 
+"""Press a keyboard key on the element matching the CSS selector.
+Valid keys: 'Enter', 'Control+V', 'a', 'A', 'Digit1', etc.
+Returns the page object (possibly unchanged)."""
 async def press(page, selector, key, input_time=None, wait_flag=False, current_tab_index=0):
     if not selector:
         print("❌ Error: Missing CSS selector. Format: fill <selector>")
@@ -215,6 +246,8 @@ async def press(page, selector, key, input_time=None, wait_flag=False, current_t
     return page
 
 
+"""Extract text content from the element matching the CSS selector.
+Returns (text_value, page) — text_value is None on failure."""
 async def text(page, selector, input_time=None, wait_flag=False, current_tab_index=0):
     if not selector:
         print("❌ Error: Missing CSS selector. Format: text <selector>")
@@ -234,9 +267,10 @@ async def text(page, selector, input_time=None, wait_flag=False, current_tab_ind
         return None, page
 
 
+"""Save a screenshot of the element matching the CSS selector.
+The file is saved as screenshots/captureX.png where X is the smallest
+unused number. Returns (path, page) — path is None on failure."""
 async def image(page, selector, input_time=None, wait_flag=False, current_tab_index=0):
-    global image_capture_count
-
     if not selector:
         print("❌ Error: Missing CSS selector. Format: image <selector>")
         return None, page
@@ -257,7 +291,6 @@ async def image(page, selector, input_time=None, wait_flag=False, current_tab_in
 
     try:
         await page.locator(selector).screenshot(path=path, timeout=standard_timeout * 1000)
-        image_capture_count = i
         print(f"✅ Saved image for '{selector}' to {path}")
         return path, page
     except Exception as e:
@@ -265,6 +298,7 @@ async def image(page, selector, input_time=None, wait_flag=False, current_tab_in
         return None, page
 
 
+"""Print all open browser tabs. The currently controlling tab is marked with ▶."""
 async def list_tabs(page):
     pages = page.context.pages
     if not pages:
@@ -284,6 +318,9 @@ async def list_tabs(page):
                 continue
 
 
+"""Switch the active context to a different tab by index.
+Returns (new_page, index) on success, or (original_page, None) on failure.
+The original page is returned on failure so the caller never loses its reference."""
 async def switch_tab(page, switch_body):
     if not switch_body:
         print("❌ Error: switch requires a tab index.")
@@ -314,6 +351,8 @@ async def switch_tab(page, switch_body):
     return new_page, index
 
 
+"""Reload the current page. Supports -time scheduling; does not support -wait.
+Returns the page object (possibly unchanged)."""
 async def reload(page, input_time=None, current_tab_index=0):
     if page.is_closed():
         print("❌ The page cannot be loaded properly or the page does not exist. Reload aborted.")
@@ -333,6 +372,8 @@ async def reload(page, input_time=None, current_tab_index=0):
     return page
 
 
+"""Navigate the current tab to a URL. Supports -time scheduling; does not support -wait.
+Returns the page object (possibly unchanged)."""
 async def goto(page, goto_url, input_time=None):
     if not goto_url:
         print("❌ Error: goto requires a URL. Format: goto <url> [-time HH:MM:SS]")
@@ -353,6 +394,8 @@ async def goto(page, goto_url, input_time=None):
     return page
 
 
+"""Open a new blank tab via page.context.new_page() and switch to it.
+Returns (new_page, new_index) — the new index is len(pages)-1."""
 async def newtab(page):
     new_page = await page.context.new_page()
     new_index = len(page.context.pages) - 1
@@ -369,9 +412,10 @@ async def batch(page):
     #    3. page = await press(page, selector, key, input_time=None, wait_flag=False, current_tab_index=0)
     #    4. text_value, page = await text(page, selector, input_time=None, wait_flag=False, current_tab_index=0)
     #    5. image_path, page = await image(page, selector, input_time=None, wait_flag=False, current_tab_index=0)
-    #    6. result = await switch_tab(page, switch_body) -> returns (page, index) tuple or (page, None)
+    #    6. new_page, new_index = await switch_tab(page, switch_body)
+    #       -> returns (new_page, index) on success, (original_page, None) on failure
     #    7. page = await reload(page, input_time=None, current_tab_index=0)
-    #    8. page = await goto(page, url)
+    #    8. page = await goto(page, url, input_time=None)
     #    9. new_page, new_index = await newtab(page)
     # Notes:
     #    1. selector, input_time, text, key are all of str | None type
@@ -381,15 +425,19 @@ async def batch(page):
     #       waits until the scheduled time first and then waits for the selector to appear.
     #    4. Use page.wait_for_load_state to wait for the page to load between actions.
     # Example usage:
-    #    page = await click(page, selector, input_time="20:30:00", wait_flag=True)
-    #    page = await fill(page, selector, "secure_password", wait_flag=True)
-    #    page = await press(page, selector, "Enter")
-    #    text_value, page = await text(page, selector, wait_flag=True)
-    #    image_path, page = await image(page, selector, input_time="00:00:00")
-    #    result = await switch_tab(page, "1")
-    #    if result is not None:
-    #        page, _ = result
-    #    page = await reload(page, input_time="09:15:00")
+    #    1. page = await click(page, selector, input_time="20:30:00", wait_flag=True)
+    #    2. page = await fill(page, selector, "secure_password", wait_flag=True)
+    #    3. page = await press(page, selector, "Enter")
+    #    4. text_value, page = await text(page, selector, wait_flag=True)
+    #    5. image_path, page = await image(page, selector, input_time="00:00:00")
+    #    6. new_page, new_index = await switch_tab(page, "1")
+    #       if new_index is not None:
+    #           page = new_page
+    #    7. page = await reload(page, input_time="09:15:00")
+    #    8. page = await goto(page, "https://example.com", input_time="09:00:00")
+    #    9. new_page, new_index = await newtab(page)
+    #       if new_index is not None:
+    #           page = new_page
     pass
 
 
@@ -413,6 +461,11 @@ def help():
     print("=" * 60)
 
 
+"""Launch a persistent Chromium context and run the interactive command loop.
+The main loop resets the cancellation flag each iteration, then reads a command.
+Standalone commands (tabs, switch, newtab, batch, help, exit) are handled first.
+Other commands (click, fill, press, text, image, reload, goto) go through
+parse_flags() for selector and flag extraction before dispatch."""
 async def interactive_browser():
     print("\n➡️ Launching Chromium... Please wait.")
 
@@ -449,6 +502,7 @@ async def interactive_browser():
                 if not user_input:
                     continue
 
+                # --- Standalone commands (no flag parsing needed) ---
                 action = user_input.split(" ", 1)[0].lower().strip()
                 if action == "exit":
                     print("Closing browser and exiting.\n")
@@ -478,6 +532,7 @@ async def interactive_browser():
                     print()
                     continue
 
+                # --- Commands requiring flag parsing (click, fill, press, etc.) ---
                 command_body = user_input[len(action):].strip()
                 selector, required_text, input_time, wait_flag = parse_flags(command_body)
 
