@@ -85,10 +85,6 @@ exit
 | `help` | Print the command menu |
 | `exit` | Close the browser and exit |
 
-## Video Showcase
-
-[![Watch the video on YouTube](https://img.youtube.com/vi/W6z0WTP7a5Y/maxresdefault.jpg)](https://youtu.be/W6z0WTP7a5Y)
-
 
 ## IMPORTANT: Do not manually open or navigate tabs
 
@@ -104,6 +100,10 @@ This CLI does **not** support tabs opened manually in the browser window (Ctrl+T
 ➜ ] click .my-button -wait
 ✅ Button clicked successfully!
 ```
+
+## Video Showcase (Control+Click on the thumbnail to watch)
+
+[![Watch the video on YouTube](https://img.youtube.com/vi/W6z0WTP7a5Y/maxresdefault.jpg)](https://youtu.be/W6z0WTP7a5Y)
 
 ## Wait behavior
 
