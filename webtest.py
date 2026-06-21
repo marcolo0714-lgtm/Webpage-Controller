@@ -1,7 +1,14 @@
 from playwright.async_api import async_playwright
 import asyncio
 import os
+import signal
 from datetime import datetime, timedelta
+
+_cancelled = False
+
+def _handle_sigint(signum, frame):
+    global _cancelled
+    _cancelled = True
 
 url = "https://www.lib.cuhk.edu.hk/en/"
 # url = "https://www.hkemobility.gov.hk/tc/route-search/pt"
@@ -98,16 +105,12 @@ def parse_flags(command_body):
     return selector, required_text, time_value, wait_flag
 
 
-async def _flush_page(page):
-    """Reset Playwright's internal state after a KeyboardInterrupt.
-    Yields to the event loop so Playwright processes any pending CDP responses."""
-    await asyncio.sleep(0)
-
-
 async def wait_until_time_or_appear(page, selector, input_time, wait_flag, current_tab_index=0):
     """Wait until a target time and/or until selector appears.
     Returns (ok, maybe_recovered_page) — ok is True when wait completed,
     False when user cancelled. The returned page may differ if recovery happened."""
+    global _cancelled
+
     if input_time:
         try:
             target_datetime = get_target_datetime(input_time)
@@ -116,35 +119,33 @@ async def wait_until_time_or_appear(page, selector, input_time, wait_flag, curre
             return True, page
 
         print(f"🕒 Waiting until {input_time} (in {time_difference(target_datetime)})... Press Ctrl+C to cancel.")
+        _cancelled = False
         previous_url = page.url
-        try:
-            while datetime.now() < target_datetime:
-                if page.url != previous_url:
-                    print(f"🔗 Page navigated to: {page.url}")
-                    previous_url = page.url
-        except KeyboardInterrupt:
-            print("⚠️ Wait cancelled by user.")
-            await _flush_page(page)
-            return False, page
+        while datetime.now() < target_datetime:
+            if _cancelled:
+                print("⚠️ Wait cancelled by user.")
+                return False, page
+            if page.url != previous_url:
+                print(f"🔗 Page navigated to: {page.url}")
+                previous_url = page.url
 
     if wait_flag:
         deadline = datetime.now() + timedelta(minutes=wait_flag_timeout)
         print(f"🕒 Waiting for selector '{selector}' to appear on screen (timeout: {wait_flag_timeout} mins). Press Ctrl+C to cancel.")
+        _cancelled = False
         previous_url = page.url
-        try:
-            while datetime.now() < deadline:
-                if page.url != previous_url:
-                    print(f"🔗 Page navigated to: {page.url}")
-                    previous_url = page.url
-                try:
-                    await page.locator(selector).wait_for(state="attached", timeout=100)
-                    return True, page
-                except Exception:
-                    pass
-        except KeyboardInterrupt:
-            print("⚠️ Wait cancelled by user.")
-            await _flush_page(page)
-            return False, page
+        while datetime.now() < deadline:
+            if _cancelled:
+                print("⚠️ Wait cancelled by user.")
+                return False, page
+            if page.url != previous_url:
+                print(f"🔗 Page navigated to: {page.url}")
+                previous_url = page.url
+            try:
+                await page.locator(selector).wait_for(state="attached", timeout=100)
+                return True, page
+            except Exception:
+                pass
         print(f"❌ Action failed: Selector '{selector}' did not appear within {wait_flag_timeout} minutes.")
         return True, page
 
@@ -437,10 +438,11 @@ async def interactive_browser():
         help()
 
         while True:
+            _cancelled = False
             try:
                 try:
                     user_input = input("➜ ] Enter command: ").strip()
-                except KeyboardInterrupt:
+                except (EOFError, KeyboardInterrupt):
                     print()
                     continue
 
@@ -526,10 +528,6 @@ async def interactive_browser():
                     print(f"❌ Unknown action '{action}'.")
                 ###################################################
 
-            except KeyboardInterrupt:
-                print("\n⚠️ Interrupted.")
-                await _flush_page(page)
-                continue
             except ValueError as e:
                 print(f"❌ Invalid action: {e}")
                 continue
@@ -540,4 +538,5 @@ async def interactive_browser():
 
 
 if __name__ == "__main__":
+    signal.signal(signal.SIGINT, _handle_sigint)
     asyncio.run(interactive_browser())
