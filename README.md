@@ -87,7 +87,7 @@ exit
 
 ## Video Showcase
 
-[![Watch the video on YouTube](https://youtu.be/W6z0WTP7a5Y)](https://youtu.be/W6z0WTP7a5Y)
+[![Watch the video on YouTube](https://img.youtube.com/vi/W6z0WTP7a5Y/maxresdefault.jpg)](https://youtu.be/W6z0WTP7a5Y)
 
 
 ## IMPORTANT: Do not manually open or navigate tabs
