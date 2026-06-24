@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 url = "https://www.lib.cuhk.edu.hk/en/"
 # url = "https://www.hkemobility.gov.hk/tc/route-search/pt"
 # url = "http://youtube.com"
+url = "https://rgsntl.rgs.cuhk.edu.hk/aqs_prd_applx/Public/tt_dsp_acad_prog.aspx"
 
 screen_width = 1280
 screen_height = 720
@@ -403,6 +404,33 @@ async def newtab(page):
     return new_page, new_index
 
 
+async def java(page, js_code, input_time=None, current_tab_index=0):
+    """Execute arbitrary JavaScript on the current page. Supports -time scheduling.
+    Use for clicking JS-only buttons, submitting forms, or any DOM manipulation
+    that cannot be reached via CSS selectors.
+    Returns the page object (possibly unchanged)."""
+    if not js_code:
+        print("❌ Error: java requires JavaScript code. Format: java <code> [-time HH:MM:SS]")
+        return page
+
+    if input_time:
+        ok, page = await wait_until_time_or_appear(page, None, input_time, False, current_tab_index)
+        if ok is False:
+            return page
+
+    print(f"➡️ Executing JavaScript: {js_code[:80]}{'...' if len(js_code) > 80 else ''}")
+    try:
+        result = await page.evaluate(js_code)
+    except Exception as e:
+        print(f"❌ JavaScript execution failed: {e}")
+    else:
+        if result is not None:
+            print(f"✅ JavaScript executed. Return value: {result}")
+        else:
+            print("✅ JavaScript executed successfully!")
+    return page
+
+
 async def batch(page):
     # Customize this function to perform a series of browser actions.
     # You can also add loops, sleeps, or any other control flow here.
@@ -417,6 +445,7 @@ async def batch(page):
     #    7. page = await reload(page, input_time=None, current_tab_index=0)
     #    8. page = await goto(page, url, input_time=None)
     #    9. new_page, new_index = await newtab(page)
+    #   10. page = await java(page, js_code, input_time=None, current_tab_index=0)
     # Notes:
     #    1. selector, input_time, text, key are all of str | None type
     #    2. key is in the format so that page.locator().press(key) is valid. Examples of key:
@@ -438,6 +467,7 @@ async def batch(page):
     #    9. new_page, new_index = await newtab(page)
     #       if new_index is not None:
     #           page = new_page
+    #   10. page = await java(page, "document.querySelector('.btn').click()", input_time="09:05:00")
     pass
 
 
@@ -454,6 +484,7 @@ def help():
     print("  To switch tab:      switch <tab index>")
     print("  To reload page:     reload [-time HH:MM:SS]")
     print("  To navigate to URL: goto <url> [-time HH:MM:SS]")
+    print("  To execute JavaScript: java <code> [-time HH:MM:SS]")
     print("  To open new tab:    newtab")
     print("  To run batch:       batch")
     print("  To print help menu: help")
@@ -578,6 +609,13 @@ async def interactive_browser():
                     if required_text is not None:
                         raise ValueError("Unexpected extra flags (-text or -key).")
                     page = await goto(page, selector, input_time)  # selector contains the URL for goto command
+
+                elif action == "java":
+                    if wait_flag != False:
+                        raise ValueError("-wait flag is not applicable for java command.")
+                    if required_text is not None:
+                        raise ValueError("Unexpected extra flags (-text or -key).")
+                    page = await java(page, selector, input_time, current_tab_index)  # selector contains the JS code
 
                 else:
                     print(f"❌ Unknown action '{action}'.")

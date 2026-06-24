@@ -8,6 +8,7 @@
 - fill text into an input field
 - press keyboard keys on an element
 - extract text content from an element
+- execute arbitrary JavaScript on the page
 - save a screenshot of an element
 - navigate to a URL
 - open new tabs
@@ -58,6 +59,7 @@ press   <selector> -key <key> [-time HH:MM:SS] [-wait]
 text    <selector> [-time HH:MM:SS] [-wait]
 image   <selector> [-time HH:MM:SS] [-wait]
 goto    <url> [-time HH:MM:SS]
+java    <javascript_code> [-time HH:MM:SS]
 reload  [-time HH:MM:SS]
 newtab
 tabs
@@ -77,6 +79,7 @@ exit
 | `text <selector>` | Print the text content of the element |
 | `image <selector>` | Save a screenshot of the element as `captureX.png` in `screenshots/`, where X is the smallest unused number |
 | `goto <url>` | Navigate the current tab to the given URL (supports `-time`) |
+| `java <code>` | Execute arbitrary JavaScript on the current page (supports `-time`). Use for JS-only buttons that cannot be located by CSS selector |
 | `reload` | Reload the current tab (supports `-time`; does not support `-wait`) |
 | `newtab` | Open a new blank tab and switch to it |
 | `tabs` | List all open tabs — the current tab is marked with `▶` |
